@@ -5,6 +5,10 @@ import androidx.room.Room
 import com.position.apps.restaurant.data.local.RestaurantsDao
 import com.position.apps.restaurant.data.local.RestaurantsDb
 import com.position.apps.restaurant.data.remote.RestaurantsApiService
+import com.position.apps.restaurant.domain.repository.RestaurantRepository
+import com.position.apps.restaurant.domain.usecase.GetInitialRestaurantsUseCase
+import com.position.apps.restaurant.domain.usecase.GetSortedRestaurantsUseCase
+import com.position.apps.restaurant.domain.usecase.ToggleRestaurantsUseCase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -38,12 +42,45 @@ object RestaurantsModule {
     fun provideRetrofit(): Retrofit {
         return Retrofit.Builder()
             .addConverterFactory(GsonConverterFactory.create())
-            .baseUrl("https://us-central1-restaurants-1103.cloudfunctions.net/restaurants")
+            .baseUrl("https://us-central1-restaurants-1103.cloudfunctions.net/restaurants/")
             .build()
     }
 
     @Provides
-    fun provideRetrofiApi(retrofit: Retrofit): RestaurantsApiService {
+    fun provideRetrofitApi(retrofit: Retrofit): RestaurantsApiService {
         return retrofit.create(RestaurantsApiService::class.java)
+    }
+
+    @Provides
+    fun provideRestaurantsRepository(
+        restaurantsApiService: RestaurantsApiService,
+        restaurantsDao: RestaurantsDao
+    ) = RestaurantRepository(restaurantsApiService, restaurantsDao)
+
+    @Provides
+    @Singleton
+    fun provideToggleRestaurantsUseCase(restaurantRepository: RestaurantRepository): ToggleRestaurantsUseCase {
+        return ToggleRestaurantsUseCase { id, oldValue ->
+            val newValue = oldValue.not()
+            restaurantRepository.toggleFavoriteRestaurant(id, newValue)
+            restaurantRepository.getRestaurants()
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideGetSortedRestaurantsUseCase(restaurantRepository: RestaurantRepository): GetSortedRestaurantsUseCase {
+        return GetSortedRestaurantsUseCase {
+            restaurantRepository.getRestaurants().sortedBy { it.title }
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideGetInitialRestaurantsUseCase(restaurantRepository: RestaurantRepository): GetInitialRestaurantsUseCase {
+        return GetInitialRestaurantsUseCase {
+            restaurantRepository.loadRestaurants()
+            provideGetSortedRestaurantsUseCase(restaurantRepository).invoke()
+        }
     }
 }
